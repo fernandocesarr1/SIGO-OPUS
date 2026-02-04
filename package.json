@@ -18,22 +18,22 @@
     "db:seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "^7.3.0",
+    "@prisma/client": "^5.22.0",
     "date-fns": "^4.1.0",
-    "express": "^5.2.1",
+    "express": "^5.0.1",
     "lucide-react": "^0.563.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.0",
     "recharts": "^3.7.0",
-    "zod": "^4.3.6"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.0.0",
-    "prisma": "^7.3.0",
+    "prisma": "^5.22.0",
     "tsx": "^4.19.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
