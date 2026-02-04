@@ -1,0 +1,377 @@
+// SIGO - Sistema Integrado de Gestão Operacional
+// Schema Prisma para PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================
+// ENUMS
+// ===========================================
+
+enum PostoGraduacao {
+  SD
+  CB
+  SGT3  // 3SGT
+  SGT2  // 2SGT
+  SGT1  // 1SGT
+  SUBTEN
+  TEN2  // 2TEN
+  TEN1  // 1TEN
+  CAP
+}
+
+enum StatusOperacional {
+  APTO
+  APTO_COM_RESTRICAO
+  AFASTADO
+  INATIVO
+}
+
+enum TipoAfastamento {
+  FERIAS
+  LICENCA_PREMIO
+  LICENCA_SAUDE_FAMILIA
+  LTS
+  CONVALESCENCA
+  LICENCA_GESTANTE
+  LICENCA_PATERNIDADE
+  LICENCA_ADOCAO
+  LICENCA_CASAMENTO
+  LICENCA_NOJO
+  LTS_COMPULSORIA
+  MISSAO_ESTUDOS
+  TREINAMENTO_CURSO
+  TRANSITO_MUDANCA
+  JURI
+  DOACAO_SANGUE
+  LIC_TRATAR_INT_PARTICULAR
+  LIC_ACOMP_CONJUGE
+  LIC_EXERC_ATIV_PRIVADA
+  PRISAO
+  AGREGACAO
+  OUTROS
+}
+
+enum StatusViatura {
+  DISPONIVEL
+  EM_USO
+  MANUTENCAO
+  BAIXADA
+}
+
+enum StatusOcorrencia {
+  REGISTRADA
+  EM_ANDAMENTO
+  CONCLUIDA
+  ARQUIVADA
+}
+
+enum TipoManutencao {
+  PREVENTIVA
+  CORRETIVA
+  REVISAO
+  EMERGENCIAL
+}
+
+enum OperacaoAuditoria {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+}
+
+// ===========================================
+// MODELOS PRINCIPAIS
+// ===========================================
+
+model Subunidade {
+  id        Int        @id @default(autoincrement())
+  nome      String     @db.VarChar(100)
+  sigla     String     @db.VarChar(20)
+  ativo     Boolean    @default(true)
+  criadoEm  DateTime   @default(now())
+  policiais Policial[]
+
+  @@map("subunidades")
+}
+
+model Policial {
+  id              Int              @id @default(autoincrement())
+  re              String           @unique @db.VarChar(20)
+  digito          String?          @db.VarChar(2)
+  nome            String           @db.VarChar(200)
+  nomeGuerra      String           @db.VarChar(100)
+  posto           PostoGraduacao
+  funcao          String?          @db.VarChar(100)
+  email           String?          @db.VarChar(150)
+  telefone        String?          @db.VarChar(20)
+  dataInclusao    DateTime?
+  dataNascimento  DateTime?
+  subunidadeId    Int?
+  subunidade      Subunidade?      @relation(fields: [subunidadeId], references: [id])
+  ativo           Boolean          @default(true)
+  criadoEm        DateTime         @default(now())
+  atualizadoEm    DateTime         @updatedAt
+  criadoPorUsuario String          @db.VarChar(100)
+
+  afastamentos    Afastamento[]
+  restricoes      Restricao[]
+  ocorrencias     Ocorrencia[]     @relation("PolicialResponsavel")
+  escalas         EscalaServico[]
+
+  @@index([posto])
+  @@index([subunidadeId])
+  @@index([ativo])
+  @@map("policiais")
+}
+
+model Afastamento {
+  id                    Int             @id @default(autoincrement())
+  policialId            Int
+  policial              Policial        @relation(fields: [policialId], references: [id])
+  tipo                  TipoAfastamento
+  dataInicio            DateTime
+  dataFim               DateTime?
+  indeterminado         Boolean         @default(false)
+  contaEfetivoExercicio Boolean         @default(true)
+  documento             String?         @db.VarChar(100)
+  observacao            String?         @db.Text
+  excluido              Boolean         @default(false)
+  criadoEm              DateTime        @default(now())
+  atualizadoEm          DateTime        @updatedAt
+  criadoPorUsuario      String          @db.VarChar(100)
+
+  @@index([policialId])
+  @@index([tipo])
+  @@index([dataFim])
+  @@index([excluido])
+  @@map("afastamentos")
+}
+
+model Restricao {
+  id               Int      @id @default(autoincrement())
+  policialId       Int
+  policial         Policial @relation(fields: [policialId], references: [id])
+  codigos          String[] @db.VarChar(5)
+  dataInicio       DateTime
+  dataFim          DateTime
+  documento        String   @db.VarChar(100)
+  parecerMedico    String?  @db.Text
+  observacao       String?  @db.Text
+  temCodigoCritico Boolean  @default(false)
+  excluido         Boolean  @default(false)
+  criadoEm         DateTime @default(now())
+  atualizadoEm     DateTime @updatedAt
+  criadoPorUsuario String   @db.VarChar(100)
+
+  @@index([policialId])
+  @@index([dataFim])
+  @@index([excluido])
+  @@index([temCodigoCritico])
+  @@map("restricoes")
+}
+
+// ===========================================
+// P/3 - OPERAÇÕES
+// ===========================================
+
+model TipoOcorrencia {
+  id          Int          @id @default(autoincrement())
+  nome        String       @db.VarChar(100)
+  descricao   String?      @db.Text
+  ativo       Boolean      @default(true)
+  ocorrencias Ocorrencia[]
+
+  @@map("tipos_ocorrencia")
+}
+
+model Ocorrencia {
+  id                  Int              @id @default(autoincrement())
+  numero              String           @unique @db.VarChar(30)
+  tipoId              Int
+  tipo                TipoOcorrencia   @relation(fields: [tipoId], references: [id])
+  dataHora            DateTime
+  local               String           @db.VarChar(200)
+  municipio           String           @db.VarChar(100)
+  coordenadas         String?          @db.VarChar(50)
+  descricao           String           @db.Text
+  status              StatusOcorrencia @default(REGISTRADA)
+  policialResponsavelId Int?
+  policialResponsavel Policial?        @relation("PolicialResponsavel", fields: [policialResponsavelId], references: [id])
+  viaturaId           Int?
+  viatura             Viatura?         @relation(fields: [viaturaId], references: [id])
+  autoInfracao        String?          @db.VarChar(50)
+  valorMulta          Decimal?         @db.Decimal(10, 2)
+  areaPatrulhadaKm    Decimal?         @db.Decimal(10, 2)
+  observacao          String?          @db.Text
+  excluido            Boolean          @default(false)
+  criadoEm            DateTime         @default(now())
+  atualizadoEm        DateTime         @updatedAt
+  criadoPorUsuario    String           @db.VarChar(100)
+
+  @@index([tipoId])
+  @@index([status])
+  @@index([dataHora])
+  @@index([municipio])
+  @@map("ocorrencias")
+}
+
+model Operacao {
+  id               Int      @id @default(autoincrement())
+  nome             String   @db.VarChar(150)
+  descricao        String?  @db.Text
+  dataInicio       DateTime
+  dataFim          DateTime?
+  localidade       String   @db.VarChar(200)
+  objetivo         String   @db.Text
+  efetivoPrevisto  Int      @default(0)
+  efetivoReal      Int      @default(0)
+  viaturasUtilizadas Int    @default(0)
+  resultados       String?  @db.Text
+  ativa            Boolean  @default(true)
+  criadoEm         DateTime @default(now())
+  atualizadoEm     DateTime @updatedAt
+  criadoPorUsuario String   @db.VarChar(100)
+
+  @@index([ativa])
+  @@index([dataInicio])
+  @@map("operacoes")
+}
+
+// ===========================================
+// P/4 - LOGÍSTICA
+// ===========================================
+
+model Viatura {
+  id           Int            @id @default(autoincrement())
+  prefixo      String         @unique @db.VarChar(20)
+  placa        String         @unique @db.VarChar(10)
+  modelo       String         @db.VarChar(50)
+  marca        String?        @db.VarChar(50)
+  ano          Int?
+  cor          String?        @db.VarChar(30)
+  chassi       String?        @db.VarChar(50)
+  renavam      String?        @db.VarChar(20)
+  kmAtual      Int            @default(0)
+  kmProxRevisao Int?
+  status       StatusViatura  @default(DISPONIVEL)
+  observacao   String?        @db.Text
+  ativo        Boolean        @default(true)
+  criadoEm     DateTime       @default(now())
+  atualizadoEm DateTime       @updatedAt
+
+  manutencoes  Manutencao[]
+  ocorrencias  Ocorrencia[]
+
+  @@index([status])
+  @@index([ativo])
+  @@map("viaturas")
+}
+
+model Manutencao {
+  id              Int            @id @default(autoincrement())
+  viaturaId       Int
+  viatura         Viatura        @relation(fields: [viaturaId], references: [id])
+  tipo            TipoManutencao
+  descricao       String         @db.Text
+  dataEntrada     DateTime
+  dataSaida       DateTime?
+  kmEntrada       Int
+  kmSaida         Int?
+  custo           Decimal?       @db.Decimal(10, 2)
+  oficina         String?        @db.VarChar(100)
+  notaFiscal      String?        @db.VarChar(50)
+  concluida       Boolean        @default(false)
+  observacao      String?        @db.Text
+  criadoEm        DateTime       @default(now())
+  atualizadoEm    DateTime       @updatedAt
+  criadoPorUsuario String        @db.VarChar(100)
+
+  @@index([viaturaId])
+  @@index([concluida])
+  @@index([dataEntrada])
+  @@map("manutencoes")
+}
+
+model Material {
+  id           Int      @id @default(autoincrement())
+  codigo       String   @unique @db.VarChar(30)
+  nome         String   @db.VarChar(150)
+  categoria    String   @db.VarChar(50)
+  unidade      String   @db.VarChar(20)
+  quantidadeAtual Int   @default(0)
+  quantidadeMinima Int  @default(0)
+  localizacao  String?  @db.VarChar(100)
+  observacao   String?  @db.Text
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([categoria])
+  @@index([ativo])
+  @@map("materiais")
+}
+
+// ===========================================
+// ESCALA DE SERVIÇO
+// ===========================================
+
+model EscalaServico {
+  id           Int      @id @default(autoincrement())
+  policialId   Int
+  policial     Policial @relation(fields: [policialId], references: [id])
+  data         DateTime @db.Date
+  turno        String   @db.VarChar(20)
+  funcaoEscala String   @db.VarChar(50)
+  observacao   String?  @db.Text
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  criadoPorUsuario String @db.VarChar(100)
+
+  @@unique([policialId, data, turno])
+  @@index([data])
+  @@map("escalas_servico")
+}
+
+// ===========================================
+// AUDITORIA
+// ===========================================
+
+model Auditoria {
+  id              Int                @id @default(autoincrement())
+  tabela          String             @db.VarChar(50)
+  registroId      Int
+  operacao        OperacaoAuditoria
+  dadosAnteriores Json?
+  dadosNovos      Json?
+  usuario         String             @db.VarChar(100)
+  ip              String?            @db.VarChar(45)
+  criadoEm        DateTime           @default(now())
+
+  @@index([tabela])
+  @@index([registroId])
+  @@index([usuario])
+  @@index([criadoEm])
+  @@map("auditoria")
+}
+
+// ===========================================
+// CONFIGURAÇÕES DO SISTEMA
+// ===========================================
+
+model ConfiguracaoSistema {
+  id        Int      @id @default(autoincrement())
+  chave     String   @unique @db.VarChar(100)
+  valor     String   @db.Text
+  descricao String?  @db.VarChar(200)
+  criadoEm  DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("configuracoes_sistema")
+}

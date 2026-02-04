@@ -1,28 +1,44 @@
 {
-  "name": "sigo-com-opus-4.5",
+  "name": "sigo",
+  "version": "2.0.0",
+  "description": "Sistema Integrado de Gestão Operacional - 4ª Cia 3º BPAmb",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "npx tsx watch server.ts",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "npx tsx server.ts",
+    "db:generate": "npx prisma generate",
+    "db:push": "npx prisma db push",
+    "db:migrate": "npx prisma migrate dev",
+    "db:studio": "npx prisma studio",
+    "db:seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
-    "react": "^19.2.4",
-    "recharts": "^3.7.0",
-    "lucide-react": "^0.563.0",
-    "react-router-dom": "^7.13.0",
-    "react-dom": "^19.2.4",
-    "express": "^5.2.1",
-    "zod": "^4.3.6",
     "@prisma/client": "^7.3.0",
-    "date-fns": "^4.1.0"
+    "date-fns": "^4.1.0",
+    "express": "^5.2.1",
+    "lucide-react": "^0.563.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.0",
+    "recharts": "^3.7.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.0.0",
+    "prisma": "^7.3.0",
+    "tsx": "^4.19.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
