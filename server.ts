@@ -24,17 +24,79 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// CORS Manual (sem dependência externa)
+// ===========================================
+// SEGURANÇA - CORS e Headers
+// ===========================================
+
+// Domínios permitidos (configurável via env)
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000').split(',');
+
 app.use((req: Request, res: Response, next: NextFunction) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+
+  // Verificar se a origem é permitida
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Usuario');
+
+  // Headers de segurança
+  res.header('X-Content-Type-Options', 'nosniff');
+  res.header('X-Frame-Options', 'DENY');
+  res.header('X-XSS-Protection', '1; mode=block');
+  res.header('Referrer-Policy', 'strict-origin-when-cross-origin');
 
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
   next();
 });
+
+// ===========================================
+// SEGURANÇA - Rate Limiting
+// ===========================================
+
+const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minuto
+const RATE_LIMIT_MAX_REQUESTS = 100; // 100 requisições por minuto
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const clientIp = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const key = `${clientIp}`;
+  const now = Date.now();
+
+  const clientData = rateLimitStore.get(key);
+
+  if (!clientData || now > clientData.resetTime) {
+    rateLimitStore.set(key, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+
+  if (clientData.count >= RATE_LIMIT_MAX_REQUESTS) {
+    res.header('Retry-After', String(Math.ceil((clientData.resetTime - now) / 1000)));
+    return res.status(429).json({
+      success: false,
+      error: 'Muitas requisições. Tente novamente em alguns segundos.',
+      retryAfter: Math.ceil((clientData.resetTime - now) / 1000)
+    });
+  }
+
+  clientData.count++;
+  next();
+});
+
+// Limpar entradas antigas do rate limit a cada 5 minutos
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, data] of rateLimitStore.entries()) {
+    if (now > data.resetTime) {
+      rateLimitStore.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
 
 // Logger de requisições
 app.use((req: Request, res: Response, next: NextFunction) => {
