@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   Filter,
@@ -44,7 +44,9 @@ import {
   Shield,
   Star,
   Printer,
-  ChevronLeft
+  ChevronLeft,
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import {
   PieChart,
@@ -56,6 +58,8 @@ import {
 } from 'recharts';
 import { mockMilitares, CODIGOS_RESTRICAO, TIPOS_AFASTAMENTO } from '../data';
 import { StatusOperacional, POSTO_LABELS, PostoGraduacao } from '../types';
+import { usePoliciais, useSubunidades, useAfastamentos, useRestricoes } from '../hooks/usePoliciais';
+import { useDashboardEfetivo } from '../hooks/useDashboard';
 
 // =============================================
 // TIPOS E INTERFACES
@@ -1183,6 +1187,24 @@ export const Personnel: React.FC = () => {
   const [formView, setFormView] = useState<'LIST' | 'FORM_AFASTAMENTO' | 'FORM_RESTRICAO'>('LIST');
   const [selectedPolicial, setSelectedPolicial] = useState<Policial | null>(null);
 
+  // Hooks da API
+  const policiaisApi = usePoliciais({ ativo: true });
+  const subunidadesApi = useSubunidades();
+  const dashboardEfetivo = useDashboardEfetivo();
+  const afastamentosApi = useAfastamentos({ ativo: true });
+  const restricoesApi = useRestricoes({ ativo: true });
+
+  // Estado de loading
+  const loading = policiaisApi.loading || dashboardEfetivo.loading;
+
+  // Função para atualizar dados
+  const refetchAll = () => {
+    policiaisApi.refetch();
+    dashboardEfetivo.refetch();
+    afastamentosApi.refetch();
+    restricoesApi.refetch();
+  };
+
   // =============================================
   // FUNÇÕES DE ORDENAÇÃO
   // =============================================
@@ -1247,12 +1269,24 @@ export const Personnel: React.FC = () => {
     return grupos;
   }, [efetivoFiltrado]);
 
-  const stats = useMemo(() => ({
-    total: efetivo.length,
-    aptos: efetivo.filter(m => m.status === StatusOperacional.APTO).length,
-    restricao: efetivo.filter(m => m.status === StatusOperacional.APTO_COM_RESTRICAO).length,
-    afastados: efetivo.filter(m => m.status === StatusOperacional.AFASTADO).length,
-  }), []);
+  // Estatísticas - usa API se disponível, senão usa mock
+  const stats = useMemo(() => {
+    if (dashboardEfetivo.data) {
+      return {
+        total: dashboardEfetivo.data.total || 0,
+        aptos: dashboardEfetivo.data.aptos || 0,
+        restricao: dashboardEfetivo.data.comRestricao || 0,
+        afastados: dashboardEfetivo.data.afastados || 0,
+      };
+    }
+    // Fallback para dados mock
+    return {
+      total: efetivo.length,
+      aptos: efetivo.filter(m => m.status === StatusOperacional.APTO).length,
+      restricao: efetivo.filter(m => m.status === StatusOperacional.APTO_COM_RESTRICAO).length,
+      afastados: efetivo.filter(m => m.status === StatusOperacional.AFASTADO).length,
+    };
+  }, [dashboardEfetivo.data]);
 
   // =============================================
   // HELPERS
@@ -1788,6 +1822,14 @@ export const Personnel: React.FC = () => {
           <p className="text-sm text-gray-500 mt-1">Gestão de Efetivo da 4ª Companhia - 3º BPAmb</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={refetchAll}
+            disabled={loading}
+            className="inline-flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </button>
           <button className="inline-flex items-center px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm">
             <FileDown className="w-4 h-4 mr-2" />
             Exportar
