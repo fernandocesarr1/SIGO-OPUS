@@ -1329,6 +1329,7 @@ export const Personnel: React.FC = () => {
       aptos: dashboardEfetivo.data?.aptos || 0,
       restricao: dashboardEfetivo.data?.comRestricao || 0,
       afastados: dashboardEfetivo.data?.afastados || 0,
+      ultimaAtualizacao: dashboardEfetivo.data?.ultimaAtualizacao || null,
     };
   }, [dashboardEfetivo.data]);
 
@@ -1863,7 +1864,14 @@ export const Personnel: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Administração de Pessoal (P/1)</h1>
-          <p className="text-sm text-gray-500 mt-1">Gestão de Efetivo da 4ª Companhia - 3º BPAmb</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Gestão de Efetivo da 4ª Companhia - 3º BPAmb
+            {stats.ultimaAtualizacao && (
+              <span className="ml-2 text-xs text-gray-400">
+                | Última atualização: {new Date(stats.ultimaAtualizacao).toLocaleDateString('pt-BR')}
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex gap-2">
           <button

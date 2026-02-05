@@ -52,6 +52,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 const POSTOS = ['SD', 'CB', 'SGT3', 'SGT2', 'SGT1', 'SUBTEN', 'TEN2', 'TEN1', 'CAP'] as const;
 
+// Data da última atualização da relação de efetivo
+const DATA_ULTIMA_ATUALIZACAO_EFETIVO = '2025-01-02';
+
 const POSTO_LABELS: Record<string, string> = {
   SD: 'Sd PM',
   CB: 'Cb PM',
@@ -1723,6 +1726,7 @@ app.get('/api/dashboard/efetivo', async (req: Request, res: Response, next: Next
         aptos,
         comRestricao,
         afastados,
+        ultimaAtualizacao: DATA_ULTIMA_ATUALIZACAO_EFETIVO,
         porPosto: porPosto.map(p => ({
           posto: p.posto,
           postoLabel: POSTO_LABELS[p.posto] || p.posto,
