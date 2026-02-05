@@ -227,6 +227,7 @@ export const restricoesApi = {
 export interface OcorrenciaFilters {
   page?: number;
   limit?: number;
+  busca?: string;
   tipoId?: number;
   status?: string;
   municipio?: string;
@@ -312,6 +313,7 @@ export const operacoesApi = {
 export interface ViaturaFilters {
   page?: number;
   limit?: number;
+  busca?: string;
   status?: string;
   ativo?: boolean;
 }

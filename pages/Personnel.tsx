@@ -56,7 +56,7 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
-import { mockMilitares, CODIGOS_RESTRICAO, TIPOS_AFASTAMENTO } from '../data';
+import { CODIGOS_RESTRICAO, TIPOS_AFASTAMENTO } from '../data';
 import { StatusOperacional, POSTO_LABELS, PostoGraduacao } from '../types';
 import { usePoliciais, useSubunidades, useAfastamentos, useRestricoes } from '../hooks/usePoliciais';
 import { useDashboardEfetivo } from '../hooks/useDashboard';
@@ -1182,17 +1182,34 @@ const FichaIndividual: React.FC<FichaIndividualProps> = ({ policial, onClose }) 
 export const Personnel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'EFETIVO' | 'CADASTRO' | 'RESTRICOES'>('EFETIVO');
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [viewMode, setViewMode] = useState<'GERAL' | 'OPM'>('GERAL');
   const [expandedOPMs, setExpandedOPMs] = useState<string[]>(['4ª Cia', '1º Pel', '2º Pel', '3º Pel']);
   const [formView, setFormView] = useState<'LIST' | 'FORM_AFASTAMENTO' | 'FORM_RESTRICAO'>('LIST');
   const [selectedPolicial, setSelectedPolicial] = useState<Policial | null>(null);
 
-  // Hooks da API
-  const policiaisApi = usePoliciais({ ativo: true });
+  // Debounce do searchTerm para evitar muitas chamadas à API
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Hooks da API - filtros passados para o BACKEND processar
+  const policiaisApi = usePoliciais({
+    ativo: true,
+    busca: debouncedSearch || undefined,
+  });
   const subunidadesApi = useSubunidades();
   const dashboardEfetivo = useDashboardEfetivo();
   const afastamentosApi = useAfastamentos({ ativo: true });
   const restricoesApi = useRestricoes({ ativo: true });
+
+  // Recarregar quando filtro mudar
+  useEffect(() => {
+    policiaisApi.refetch();
+  }, [debouncedSearch]);
 
   // Estado de loading
   const loading = policiaisApi.loading || dashboardEfetivo.loading;
@@ -1236,15 +1253,51 @@ export const Personnel: React.FC = () => {
   // DADOS FILTRADOS E ORDENADOS
   // =============================================
 
+  // Transformar dados da API para o formato esperado pelo componente
   const efetivoFiltrado = useMemo(() => {
-    return efetivo
-      .filter(m =>
-        m.nomeCompleto.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.nomeGuerra.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.re.includes(searchTerm)
-      )
-      .sort(ordenarPorAntiguidade);
-  }, [searchTerm]);
+    if (!policiaisApi.data || policiaisApi.data.length === 0) {
+      return [];
+    }
+
+    // Mapear dados da API para interface Policial
+    const policiaisTransformados: Policial[] = policiaisApi.data.map((p: any) => ({
+      id: p.id,
+      re: p.re + (p.digito ? `-${p.digito}` : ''),
+      posto: p.posto as PostoGraduacao,
+      nomeGuerra: p.nomeGuerra,
+      nomeCompleto: p.nome,
+      funcao: p.funcao || '',
+      pelotao: p.subunidade?.sigla || '',
+      subunidade: p.subunidade?.nome || '4ª Cia',
+      status: p.statusOperacional === 'APTO' ? StatusOperacional.APTO :
+              p.statusOperacional === 'APTO_COM_RESTRICAO' ? StatusOperacional.APTO_COM_RESTRICAO :
+              StatusOperacional.AFASTADO,
+      dataPromocao: p.dataPromocao || undefined,
+      dataIngresso: p.dataInclusao || undefined,
+      dataNascimento: p.dataNascimento || undefined,
+      email: p.email || undefined,
+      telefone: p.telefone || undefined,
+      restricoes: p.restricoes?.map((r: any) => ({
+        id: r.id,
+        codigos: r.codigos,
+        parecer: r.parecerMedico || '',
+        dataInicio: r.dataInicio,
+        dataFim: r.dataFim,
+        documento: r.documento,
+        status: 'ATIVO' as const,
+      })) || [],
+      afastamento: p.afastamentos?.[0] ? {
+        id: p.afastamentos[0].id,
+        tipoId: p.afastamentos[0].tipo,
+        dataInicio: p.afastamentos[0].dataInicio,
+        dataFim: p.afastamentos[0].dataFim,
+        documento: p.afastamentos[0].documento || '',
+        status: 'ATIVO' as const,
+      } : undefined,
+    }));
+
+    return policiaisTransformados.sort(ordenarPorAntiguidade);
+  }, [policiaisApi.data]);
 
   const efetivoAgrupado = useMemo(() => {
     const grupos: Record<string, Policial[]> = {
@@ -1269,22 +1322,13 @@ export const Personnel: React.FC = () => {
     return grupos;
   }, [efetivoFiltrado]);
 
-  // Estatísticas - usa API se disponível, senão usa mock
+  // Estatísticas - usa API do dashboard
   const stats = useMemo(() => {
-    if (dashboardEfetivo.data) {
-      return {
-        total: dashboardEfetivo.data.total || 0,
-        aptos: dashboardEfetivo.data.aptos || 0,
-        restricao: dashboardEfetivo.data.comRestricao || 0,
-        afastados: dashboardEfetivo.data.afastados || 0,
-      };
-    }
-    // Fallback para dados mock
     return {
-      total: efetivo.length,
-      aptos: efetivo.filter(m => m.status === StatusOperacional.APTO).length,
-      restricao: efetivo.filter(m => m.status === StatusOperacional.APTO_COM_RESTRICAO).length,
-      afastados: efetivo.filter(m => m.status === StatusOperacional.AFASTADO).length,
+      total: dashboardEfetivo.data?.total || 0,
+      aptos: dashboardEfetivo.data?.aptos || 0,
+      restricao: dashboardEfetivo.data?.comRestricao || 0,
+      afastados: dashboardEfetivo.data?.afastados || 0,
     };
   }, [dashboardEfetivo.data]);
 
@@ -1386,7 +1430,7 @@ export const Personnel: React.FC = () => {
       <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
         <p className="text-sm text-gray-600">
           Total: <span className="font-bold">{efetivoFiltrado.length}</span> policiais militares
-          {searchTerm && ` (filtrado de ${efetivo.length})`}
+          {debouncedSearch && ` (filtrado de ${stats.total})`}
         </p>
       </div>
     </div>
@@ -1483,7 +1527,7 @@ export const Personnel: React.FC = () => {
 
         <div className="bg-gray-50 px-4 py-3 border-t border-gray-200">
           <p className="text-sm text-gray-600">
-            Total Geral: <span className="font-bold">{efetivo.length}</span> policiais militares
+            Total Geral: <span className="font-bold">{stats.total}</span> policiais militares
           </p>
         </div>
       </div>
@@ -1744,7 +1788,7 @@ export const Personnel: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {efetivo.filter(m => m.status !== StatusOperacional.APTO).map(m => (
+                {efetivoFiltrado.filter(m => m.status !== StatusOperacional.APTO).map(m => (
                   <tr key={m.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{POSTO_LABELS[m.posto]} {m.nomeGuerra}</div>

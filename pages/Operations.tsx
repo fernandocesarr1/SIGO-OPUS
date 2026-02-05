@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -46,24 +46,32 @@ export const Operations: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'ocorrencias' | 'operacoes'>('ocorrencias');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  // Hooks da API
-  const ocorrencias = useOcorrencias({ limit: 20 });
+  // Debounce do searchTerm para evitar muitas chamadas à API
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Hooks da API - filtros passados para o BACKEND processar
+  const ocorrencias = useOcorrencias({
+    limit: 20,
+    busca: debouncedSearch || undefined,
+    status: statusFilter || undefined,
+  });
   const operacoes = useOperacoesList({ ativa: true });
   const tiposOcorrencia = useTiposOcorrencia();
   const dashboardStats = useDashboardOcorrencias(30);
 
   const loading = ocorrencias.loading || operacoes.loading;
 
-  // Filtrar ocorrências
-  const filteredOcorrencias = ocorrencias.data?.filter((oc: any) => {
-    const matchesSearch = !searchTerm ||
-      oc.numero?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      oc.local?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      oc.municipio?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = !statusFilter || oc.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  }) || [];
+  // Recarregar quando filtros mudarem
+  useEffect(() => {
+    ocorrencias.refetch();
+  }, [debouncedSearch, statusFilter]);
 
   // Dados para o gráfico
   const chartData = dashboardStats.data?.porTipo?.map((item: any) => ({
@@ -231,14 +239,14 @@ export const Operations: React.FC = () => {
                         {ocorrencias.error}
                       </td>
                     </tr>
-                  ) : filteredOcorrencias.length === 0 ? (
+                  ) : ocorrencias.data.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                         Nenhuma ocorrência encontrada
                       </td>
                     </tr>
                   ) : (
-                    filteredOcorrencias.map((oc: any) => (
+                    ocorrencias.data.map((oc: any) => (
                       <tr key={oc.id} className="bg-white border-b hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4 font-medium text-gray-900">{oc.numero}</td>
                         <td className="px-6 py-4">{oc.tipo?.nome || 'N/A'}</td>
@@ -284,7 +292,7 @@ export const Operations: React.FC = () => {
             {ocorrencias.pagination && ocorrencias.pagination.totalPages > 1 && (
               <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
                 <p className="text-sm text-gray-500">
-                  Mostrando {filteredOcorrencias.length} de {ocorrencias.pagination.total} ocorrências
+                  Mostrando {ocorrencias.data.length} de {ocorrencias.pagination.total} ocorrências
                 </p>
                 <div className="flex gap-2">
                   <button

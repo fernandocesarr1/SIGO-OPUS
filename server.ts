@@ -1058,7 +1058,7 @@ app.post('/api/tipos-ocorrencia', async (req: Request, res: Response, next: Next
 app.get('/api/ocorrencias', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
-      tipoId, status, municipio, dataInicio, dataFim,
+      busca, tipoId, status, municipio, dataInicio, dataFim,
       page = '1', limit = '50'
     } = req.query;
 
@@ -1075,6 +1075,14 @@ app.get('/api/ocorrencias', async (req: Request, res: Response, next: NextFuncti
           gte: parseLocalDate(dataInicio as string),
           lte: endOfDay(parseLocalDate(dataFim as string))
         }
+      }),
+      ...(busca && {
+        OR: [
+          { numero: { contains: busca as string, mode: 'insensitive' } },
+          { local: { contains: busca as string, mode: 'insensitive' } },
+          { municipio: { contains: busca as string, mode: 'insensitive' } },
+          { descricao: { contains: busca as string, mode: 'insensitive' } }
+        ]
       })
     };
 
@@ -1327,14 +1335,22 @@ app.put('/api/operacoes/:id', async (req: Request, res: Response, next: NextFunc
 // Listar viaturas
 app.get('/api/viaturas', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { status, ativo = 'true', page = '1', limit = '50' } = req.query;
+    const { busca, status, ativo = 'true', page = '1', limit = '50' } = req.query;
 
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
     const take = Math.min(parseInt(limit as string), 100);
 
     const where: Prisma.ViaturaWhereInput = {
       ativo: ativo === 'true',
-      ...(status && { status: status as any })
+      ...(status && { status: status as any }),
+      ...(busca && {
+        OR: [
+          { prefixo: { contains: busca as string, mode: 'insensitive' } },
+          { placa: { contains: busca as string, mode: 'insensitive' } },
+          { modelo: { contains: busca as string, mode: 'insensitive' } },
+          { marca: { contains: busca as string, mode: 'insensitive' } }
+        ]
+      })
     };
 
     const [viaturas, total] = await Promise.all([

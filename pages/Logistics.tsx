@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Truck,
   Wrench,
@@ -36,27 +36,32 @@ export const Logistics: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'viaturas' | 'manutencoes' | 'materiais'>('viaturas');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  // Hooks da API
-  const viaturas = useViaturas();
+  // Debounce do searchTerm para evitar muitas chamadas à API
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Hooks da API - filtros passados para o BACKEND processar
+  const viaturas = useViaturas({
+    busca: debouncedSearch || undefined,
+    status: statusFilter || undefined,
+  });
   const manutencoes = useManutencoes({ concluida: false });
-  const materiais = useMateriais();
+  const materiais = useMateriais({ estoqueMinimo: false });
+  const materiaisAlerta = useMateriais({ estoqueMinimo: true });
   const dashboardViaturas = useDashboardViaturas();
 
   const loading = viaturas.loading || manutencoes.loading;
 
-  // Filtrar viaturas
-  const filteredViaturas = viaturas.data?.filter((vtr: any) => {
-    const matchesSearch = !searchTerm ||
-      vtr.prefixo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      vtr.modelo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      vtr.placa?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = !statusFilter || vtr.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  }) || [];
-
-  // Materiais com estoque baixo
-  const materiaisBaixoEstoque = materiais.data?.filter((m: any) => m.quantidadeAtual <= m.quantidadeMinima) || [];
+  // Recarregar quando filtros mudarem
+  useEffect(() => {
+    viaturas.refetch();
+  }, [debouncedSearch, statusFilter]);
 
   return (
     <div className="space-y-6">
@@ -129,7 +134,7 @@ export const Logistics: React.FC = () => {
           <div>
             <p className="text-sm text-gray-500">Materiais Alerta</p>
             <p className="text-2xl font-bold text-gray-900">
-              {materiais.loading ? <Loader2 className="w-5 h-5 animate-spin" /> : materiaisBaixoEstoque.length}
+              {materiaisAlerta.loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (materiaisAlerta.data?.length || 0)}
             </p>
           </div>
         </div>
@@ -228,14 +233,14 @@ export const Logistics: React.FC = () => {
                         {viaturas.error}
                       </td>
                     </tr>
-                  ) : filteredViaturas.length === 0 ? (
+                  ) : viaturas.data.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                         Nenhuma viatura encontrada
                       </td>
                     </tr>
                   ) : (
-                    filteredViaturas.map((vtr: any) => (
+                    viaturas.data.map((vtr: any) => (
                       <tr key={vtr.id} className="bg-white border-b hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4 font-mono font-medium text-gray-900">{vtr.prefixo}</td>
                         <td className="px-6 py-4">
@@ -370,14 +375,14 @@ export const Logistics: React.FC = () => {
             </button>
           </div>
 
-          {materiaisBaixoEstoque.length > 0 && (
+          {materiaisAlerta.data && materiaisAlerta.data.length > 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-center gap-2 text-yellow-800">
                 <AlertCircle className="w-5 h-5" />
                 <span className="font-medium">Alerta de Estoque Baixo</span>
               </div>
               <p className="mt-1 text-sm text-yellow-700">
-                {materiaisBaixoEstoque.length} material(is) abaixo do estoque mínimo.
+                {materiaisAlerta.data.length} material(is) abaixo do estoque mínimo.
               </p>
             </div>
           )}
