@@ -87,6 +87,63 @@ enum OperacaoAuditoria {
   RESTORE
 }
 
+enum PerfilUsuario {
+  COMANDANTE       // Acesso total ao sistema
+  CHEFE_SECAO      // Acesso à sua seção (P/1, P/3, P/4)
+  OPERADOR         // Acesso limitado (consulta e registros básicos)
+  ADMIN_SISTEMA    // Administrador técnico
+}
+
+// ===========================================
+// AUTENTICAÇÃO E USUÁRIOS
+// ===========================================
+
+model Usuario {
+  id             Int            @id @default(autoincrement())
+  username       String         @unique @db.VarChar(50)
+  senhaHash      String         @db.VarChar(255)
+  perfil         PerfilUsuario  @default(OPERADOR)
+  secao          String?        @db.VarChar(20)  // P/1, P/3, P/4, etc.
+
+  // Vínculo com policial (opcional)
+  policialId     Int?           @unique
+  policial       Policial?      @relation(fields: [policialId], references: [id])
+
+  // Controle de acesso
+  ativo          Boolean        @default(true)
+  ultimoAcesso   DateTime?
+  tentativasLogin Int           @default(0)
+  bloqueadoAte   DateTime?
+
+  // Auditoria
+  criadoEm       DateTime       @default(now())
+  atualizadoEm   DateTime       @updatedAt
+  criadoPor      String?        @db.VarChar(100)
+
+  // Sessões ativas
+  sessoes        SessaoUsuario[]
+
+  @@index([username])
+  @@index([perfil])
+  @@index([ativo])
+  @@map("usuarios")
+}
+
+model SessaoUsuario {
+  id            String    @id @default(uuid())
+  usuarioId     Int
+  usuario       Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tokenHash     String    @db.VarChar(255)
+  expiresAt     DateTime
+  ipAddress     String?   @db.VarChar(45)
+  userAgent     String?   @db.VarChar(500)
+  criadoEm      DateTime  @default(now())
+
+  @@index([usuarioId])
+  @@index([expiresAt])
+  @@map("sessoes_usuario")
+}
+
 // ===========================================
 // MODELOS PRINCIPAIS
 // ===========================================
@@ -125,6 +182,7 @@ model Policial {
   restricoes      Restricao[]
   ocorrencias     Ocorrencia[]     @relation("PolicialResponsavel")
   escalas         EscalaServico[]
+  usuario         Usuario?
 
   @@index([posto])
   @@index([subunidadeId])

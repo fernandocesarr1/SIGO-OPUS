@@ -1,21 +1,32 @@
 import React from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Users, 
-  BarChart3, 
-  Package, 
-  Megaphone, 
-  Settings, 
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  Users,
+  BarChart3,
+  Package,
+  Megaphone,
+  Settings,
   LogOut,
   Bell,
   Search,
   Menu,
   Shield
 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+
+// Mapeamento de perfil para label legível
+const PERFIL_LABELS: Record<string, string> = {
+  COMANDANTE: 'Comandante',
+  CHEFE_SECAO: 'Chefe de Seção',
+  OPERADOR: 'Operador',
+  ADMIN_SISTEMA: 'Administrador'
+};
 
 export const Layout: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { usuario, logout, hasSecao } = useAuth();
 
   const getPageTitle = (path: string) => {
     switch(path) {
@@ -28,13 +39,57 @@ export const Layout: React.FC = () => {
     }
   };
 
-  const navItems = [
-    { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/p1', label: 'P/1 Pessoal', icon: Users },
-    { path: '/p3', label: 'P/3 Operacional', icon: BarChart3 },
-    { path: '/p4', label: 'P/4 Logística', icon: Package },
-    { path: '/p5', label: 'P/5 Comunicação', icon: Megaphone },
+  const allNavItems = [
+    { path: '/', label: 'Dashboard', icon: LayoutDashboard, secao: null },
+    { path: '/p1', label: 'P/1 Pessoal', icon: Users, secao: 'P/1' },
+    { path: '/p3', label: 'P/3 Operacional', icon: BarChart3, secao: 'P/3' },
+    { path: '/p4', label: 'P/4 Logística', icon: Package, secao: 'P/4' },
+    { path: '/p5', label: 'P/5 Comunicação', icon: Megaphone, secao: 'P/5' },
   ];
+
+  // Filtrar itens de navegação baseado nas permissões do usuário
+  const navItems = allNavItems.filter(item => {
+    if (!item.secao) return true; // Dashboard sempre visível
+    return hasSecao([item.secao]);
+  });
+
+  // Handler de logout
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
+  // Obter iniciais do usuário
+  const getInitials = (): string => {
+    if (usuario?.policial?.nomeGuerra) {
+      return usuario.policial.nomeGuerra.substring(0, 2).toUpperCase();
+    }
+    if (usuario?.username) {
+      return usuario.username.substring(0, 2).toUpperCase();
+    }
+    return 'US';
+  };
+
+  // Obter nome de exibição
+  const getDisplayName = (): string => {
+    if (usuario?.policial) {
+      const posto = usuario.policial.posto?.replace(/\d/g, '') || '';
+      return `${posto} ${usuario.policial.nomeGuerra}`.trim();
+    }
+    return usuario?.username || 'Usuário';
+  };
+
+  // Obter cargo/perfil para exibição
+  const getDisplayRole = (): string => {
+    if (usuario?.perfil) {
+      let role = PERFIL_LABELS[usuario.perfil] || usuario.perfil;
+      if (usuario.secao) {
+        role += ` ${usuario.secao}`;
+      }
+      return role;
+    }
+    return '';
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -72,7 +127,10 @@ export const Layout: React.FC = () => {
             <Settings className="w-5 h-5 mr-3" />
             <span className="text-sm">Configurações</span>
           </button>
-          <button className="flex items-center text-red-300 hover:text-red-100 w-full px-4 py-2 mt-1 hover:bg-primary-800 rounded-md transition-colors">
+          <button
+            onClick={handleLogout}
+            className="flex items-center text-red-300 hover:text-red-100 w-full px-4 py-2 mt-1 hover:bg-primary-800 rounded-md transition-colors"
+          >
             <LogOut className="w-5 h-5 mr-3" />
             <span className="text-sm">Sair</span>
           </button>
@@ -107,11 +165,11 @@ export const Layout: React.FC = () => {
 
             <div className="flex items-center space-x-3 pl-6 border-l border-gray-200">
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-gray-900">Cap PM Silva</p>
-                <p className="text-xs text-gray-500">Comandante</p>
+                <p className="text-sm font-medium text-gray-900">{getDisplayName()}</p>
+                <p className="text-xs text-gray-500">{getDisplayRole()}</p>
               </div>
               <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold border-2 border-primary-200">
-                CS
+                {getInitials()}
               </div>
             </div>
           </div>

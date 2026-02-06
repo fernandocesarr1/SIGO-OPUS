@@ -7,8 +7,10 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import { z, ZodError } from 'zod';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma, PerfilUsuario } from '@prisma/client';
 import { addDays, startOfDay, endOfDay, format, parseISO } from 'date-fns';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 // ===========================================
 // INICIALIZAÇÃO
@@ -148,6 +150,30 @@ const CODIGOS_RESTRICAO_VALIDOS = [
 ];
 
 const CODIGOS_CRITICOS = ['UA', 'PO', 'DV', 'SE'];
+
+// ===========================================
+// CONFIGURAÇÕES DE AUTENTICAÇÃO
+// ===========================================
+
+const JWT_SECRET = process.env.JWT_SECRET || 'sigo-dev-secret-key-change-in-production';
+const JWT_EXPIRES_IN = '8h'; // Token expira em 8 horas
+const JWT_REFRESH_EXPIRES_IN = '7d'; // Refresh token expira em 7 dias
+const BCRYPT_ROUNDS = 12;
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MINUTES = 15;
+
+// Interface para payload do JWT
+interface JWTPayload {
+  userId: number;
+  username: string;
+  perfil: PerfilUsuario;
+  secao: string | null;
+}
+
+// Interface para request autenticada
+interface AuthenticatedRequest extends Request {
+  user?: JWTPayload;
+}
 
 const STATUS_VIATURA = ['DISPONIVEL', 'EM_USO', 'MANUTENCAO', 'BAIXADA'] as const;
 const STATUS_OCORRENCIA = ['REGISTRADA', 'EM_ANDAMENTO', 'CONCLUIDA', 'ARQUIVADA'] as const;
@@ -455,6 +481,407 @@ function errorHandler(err: any, req: Request, res: Response, next: NextFunction)
     message: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 }
+
+// ===========================================
+// AUTENTICAÇÃO - FUNÇÕES AUXILIARES
+// ===========================================
+
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
+}
+
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
+}
+
+function generateToken(payload: JWTPayload): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+function verifyToken(token: string): JWTPayload | null {
+  try {
+    return jwt.verify(token, JWT_SECRET) as JWTPayload;
+  } catch {
+    return null;
+  }
+}
+
+// ===========================================
+// AUTENTICAÇÃO - MIDDLEWARE
+// ===========================================
+
+// Middleware de autenticação JWT
+function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      success: false,
+      error: 'Token de autenticação não fornecido'
+    });
+  }
+
+  const token = authHeader.substring(7);
+  const payload = verifyToken(token);
+
+  if (!payload) {
+    return res.status(401).json({
+      success: false,
+      error: 'Token inválido ou expirado'
+    });
+  }
+
+  req.user = payload;
+  next();
+}
+
+// Middleware de autorização por perfil
+function requirePerfil(...perfisPermitidos: PerfilUsuario[]) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuário não autenticado'
+      });
+    }
+
+    if (!perfisPermitidos.includes(req.user.perfil)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Acesso negado. Perfil insuficiente para esta operação.'
+      });
+    }
+
+    next();
+  };
+}
+
+// Middleware para verificar acesso à seção (P/1, P/3, P/4)
+function requireSecao(...secoesPermitidas: string[]) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuário não autenticado'
+      });
+    }
+
+    // Comandante e Admin têm acesso a todas as seções
+    if (req.user.perfil === 'COMANDANTE' || req.user.perfil === 'ADMIN_SISTEMA') {
+      return next();
+    }
+
+    // Chefe de seção só acessa sua seção
+    if (req.user.perfil === 'CHEFE_SECAO') {
+      if (!req.user.secao || !secoesPermitidas.includes(req.user.secao)) {
+        return res.status(403).json({
+          success: false,
+          error: 'Acesso negado. Você não tem permissão para esta seção.'
+        });
+      }
+    }
+
+    next();
+  };
+}
+
+// ===========================================
+// ROTAS - AUTENTICAÇÃO
+// ===========================================
+
+// Schema de validação para login
+const loginSchema = z.object({
+  username: z.string().min(3, 'Usuário deve ter pelo menos 3 caracteres'),
+  senha: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres')
+});
+
+// POST /api/auth/login - Realizar login
+app.post('/api/auth/login', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { username, senha } = loginSchema.parse(req.body);
+
+    // Buscar usuário
+    const usuario = await prisma.usuario.findUnique({
+      where: { username },
+      include: {
+        policial: {
+          select: {
+            id: true,
+            nome: true,
+            nomeGuerra: true,
+            posto: true
+          }
+        }
+      }
+    });
+
+    if (!usuario) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuário ou senha inválidos'
+      });
+    }
+
+    // Verificar se está bloqueado
+    if (usuario.bloqueadoAte && usuario.bloqueadoAte > new Date()) {
+      const minutosRestantes = Math.ceil((usuario.bloqueadoAte.getTime() - Date.now()) / 60000);
+      return res.status(423).json({
+        success: false,
+        error: `Conta bloqueada. Tente novamente em ${minutosRestantes} minutos.`
+      });
+    }
+
+    // Verificar se está ativo
+    if (!usuario.ativo) {
+      return res.status(403).json({
+        success: false,
+        error: 'Conta desativada. Entre em contato com o administrador.'
+      });
+    }
+
+    // Verificar senha
+    const senhaValida = await verifyPassword(senha, usuario.senhaHash);
+
+    if (!senhaValida) {
+      // Incrementar tentativas de login
+      const novasTentativas = usuario.tentativasLogin + 1;
+      const updateData: any = { tentativasLogin: novasTentativas };
+
+      // Bloquear após MAX_LOGIN_ATTEMPTS tentativas
+      if (novasTentativas >= MAX_LOGIN_ATTEMPTS) {
+        updateData.bloqueadoAte = new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000);
+        updateData.tentativasLogin = 0;
+      }
+
+      await prisma.usuario.update({
+        where: { id: usuario.id },
+        data: updateData
+      });
+
+      return res.status(401).json({
+        success: false,
+        error: 'Usuário ou senha inválidos',
+        tentativasRestantes: novasTentativas >= MAX_LOGIN_ATTEMPTS ? 0 : MAX_LOGIN_ATTEMPTS - novasTentativas
+      });
+    }
+
+    // Login bem-sucedido - resetar tentativas e atualizar último acesso
+    await prisma.usuario.update({
+      where: { id: usuario.id },
+      data: {
+        tentativasLogin: 0,
+        bloqueadoAte: null,
+        ultimoAcesso: new Date()
+      }
+    });
+
+    // Gerar token JWT
+    const payload: JWTPayload = {
+      userId: usuario.id,
+      username: usuario.username,
+      perfil: usuario.perfil,
+      secao: usuario.secao
+    };
+
+    const token = generateToken(payload);
+
+    // Criar sessão no banco
+    const tokenHash = await hashPassword(token.substring(0, 50)); // Hash parcial do token
+    await prisma.sessaoUsuario.create({
+      data: {
+        usuarioId: usuario.id,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000), // 8 horas
+        ipAddress: getClientIP(req),
+        userAgent: req.headers['user-agent']?.substring(0, 500)
+      }
+    });
+
+    // Registrar auditoria
+    await registrarAuditoria(
+      'usuarios',
+      usuario.id,
+      'UPDATE',
+      null,
+      { action: 'LOGIN' },
+      usuario.username,
+      getClientIP(req)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        token,
+        usuario: {
+          id: usuario.id,
+          username: usuario.username,
+          perfil: usuario.perfil,
+          secao: usuario.secao,
+          policial: usuario.policial
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/auth/logout - Realizar logout
+app.post('/api/auth/logout', authMiddleware, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Não autenticado' });
+    }
+
+    // Remover todas as sessões do usuário (logout de todos os dispositivos)
+    await prisma.sessaoUsuario.deleteMany({
+      where: { usuarioId: req.user.userId }
+    });
+
+    // Registrar auditoria
+    await registrarAuditoria(
+      'usuarios',
+      req.user.userId,
+      'UPDATE',
+      null,
+      { action: 'LOGOUT' },
+      req.user.username,
+      getClientIP(req)
+    );
+
+    res.json({
+      success: true,
+      message: 'Logout realizado com sucesso'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/auth/me - Obter dados do usuário atual
+app.get('/api/auth/me', authMiddleware, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Não autenticado' });
+    }
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.user.userId },
+      select: {
+        id: true,
+        username: true,
+        perfil: true,
+        secao: true,
+        ativo: true,
+        ultimoAcesso: true,
+        criadoEm: true,
+        policial: {
+          select: {
+            id: true,
+            re: true,
+            nome: true,
+            nomeGuerra: true,
+            posto: true,
+            funcao: true,
+            subunidade: {
+              select: {
+                id: true,
+                nome: true,
+                sigla: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!usuario || !usuario.ativo) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuário não encontrado ou desativado'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: usuario
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT /api/auth/senha - Alterar senha
+app.put('/api/auth/senha', authMiddleware, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Não autenticado' });
+    }
+
+    const schema = z.object({
+      senhaAtual: z.string().min(6),
+      novaSenha: z.string().min(6, 'Nova senha deve ter pelo menos 6 caracteres')
+    });
+
+    const { senhaAtual, novaSenha } = schema.parse(req.body);
+
+    // Buscar usuário
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.user.userId }
+    });
+
+    if (!usuario) {
+      return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+    }
+
+    // Verificar senha atual
+    const senhaValida = await verifyPassword(senhaAtual, usuario.senhaHash);
+    if (!senhaValida) {
+      return res.status(401).json({ success: false, error: 'Senha atual incorreta' });
+    }
+
+    // Atualizar senha
+    const novaHash = await hashPassword(novaSenha);
+    await prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { senhaHash: novaHash }
+    });
+
+    // Invalidar todas as sessões (forçar re-login)
+    await prisma.sessaoUsuario.deleteMany({
+      where: { usuarioId: usuario.id }
+    });
+
+    // Registrar auditoria
+    await registrarAuditoria(
+      'usuarios',
+      usuario.id,
+      'UPDATE',
+      null,
+      { action: 'PASSWORD_CHANGE' },
+      usuario.username,
+      getClientIP(req)
+    );
+
+    res.json({
+      success: true,
+      message: 'Senha alterada com sucesso. Faça login novamente.'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/auth/check - Verificar se token é válido (útil para frontend)
+app.get('/api/auth/check', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+  res.json({
+    success: true,
+    data: {
+      valid: true,
+      user: req.user
+    }
+  });
+});
 
 // ===========================================
 // ROTAS - POLICIAIS (P/1)

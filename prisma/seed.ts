@@ -5,12 +5,18 @@
  * ÚLTIMA ATUALIZAÇÃO DA RELAÇÃO: 02 de janeiro de 2025
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, PerfilUsuario } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 // Data da última atualização do efetivo
 const DATA_ULTIMA_ATUALIZACAO = '2025-01-02';
+
+// Função para gerar hash de senha
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 12);
+}
 
 async function main() {
   console.log('🌱 Iniciando seed do banco de dados...\n');
@@ -408,6 +414,91 @@ async function main() {
   ]);
   console.log(`   ✓ ${materiais.length} materiais criados\n`);
 
+  // 5. Criar Usuários padrão do sistema
+  console.log('👤 Criando usuários do sistema...');
+
+  // Senha padrão para primeiro acesso: "sigo2025"
+  // IMPORTANTE: Alterar na primeira utilização!
+  const senhaHash = await hashPassword('sigo2025');
+
+  const usuarios = await Promise.all([
+    // Administrador do Sistema
+    prisma.usuario.upsert({
+      where: { username: 'admin' },
+      update: {},
+      create: {
+        username: 'admin',
+        senhaHash,
+        perfil: 'ADMIN_SISTEMA' as PerfilUsuario,
+        secao: null,
+        criadoPor: 'SEED'
+      }
+    }),
+    // Comandante da Cia
+    prisma.usuario.upsert({
+      where: { username: 'comandante' },
+      update: {},
+      create: {
+        username: 'comandante',
+        senhaHash,
+        perfil: 'COMANDANTE' as PerfilUsuario,
+        secao: null,
+        policialId: 1, // Cap PM WILLIAM
+        criadoPor: 'SEED'
+      }
+    }),
+    // Chefe da P/1 (Pessoal)
+    prisma.usuario.upsert({
+      where: { username: 'p1' },
+      update: {},
+      create: {
+        username: 'p1',
+        senhaHash,
+        perfil: 'CHEFE_SECAO' as PerfilUsuario,
+        secao: 'P/1',
+        criadoPor: 'SEED'
+      }
+    }),
+    // Chefe da P/3 (Operações)
+    prisma.usuario.upsert({
+      where: { username: 'p3' },
+      update: {},
+      create: {
+        username: 'p3',
+        senhaHash,
+        perfil: 'CHEFE_SECAO' as PerfilUsuario,
+        secao: 'P/3',
+        criadoPor: 'SEED'
+      }
+    }),
+    // Chefe da P/4 (Logística)
+    prisma.usuario.upsert({
+      where: { username: 'p4' },
+      update: {},
+      create: {
+        username: 'p4',
+        senhaHash,
+        perfil: 'CHEFE_SECAO' as PerfilUsuario,
+        secao: 'P/4',
+        criadoPor: 'SEED'
+      }
+    }),
+    // Operador padrão
+    prisma.usuario.upsert({
+      where: { username: 'operador' },
+      update: {},
+      create: {
+        username: 'operador',
+        senhaHash,
+        perfil: 'OPERADOR' as PerfilUsuario,
+        secao: null,
+        criadoPor: 'SEED'
+      }
+    }),
+  ]);
+  console.log(`   ✓ ${usuarios.length} usuários criados`);
+  console.log('   ⚠️  IMPORTANTE: Altere as senhas padrão no primeiro acesso!\n');
+
   console.log('✅ Seed concluído com sucesso!\n');
   console.log('═══════════════════════════════════════════════════════');
   console.log('                 RESUMO DO EFETIVO                     ');
@@ -424,6 +515,7 @@ async function main() {
   console.log(`   🚗 Viaturas: ${viaturas.length}`);
   console.log(`   📦 Materiais: ${materiais.length}`);
   console.log(`   📍 Subunidades: ${subunidades.length}`);
+  console.log(`   👤 Usuários: ${usuarios.length}`);
   console.log('═══════════════════════════════════════════════════════');
 }
 
