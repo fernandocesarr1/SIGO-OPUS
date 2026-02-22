@@ -6,11 +6,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:server": "npx tsx watch server.ts",
+    "dev:server": "npx tsx watch backend/server.ts",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "npx tsx server.ts",
+    "server": "npx tsx backend/server.ts",
     "db:generate": "npx prisma generate",
     "db:push": "npx prisma db push",
     "db:migrate": "npx prisma migrate dev",
