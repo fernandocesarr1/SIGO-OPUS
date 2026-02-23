@@ -107,7 +107,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       const resultado = aplicarRegrasRestricao(data.codigos);
       finalCodigos = resultado.finalCodigos;
       warnings.push(...resultado.warnings);
-      temCritico = finalCodigos.some(c => CODBÇOS_CRITICOS.includes(c));
+      temCritico = finalCodigos.some(c => CODIGOS_CRITICOS.includes(c));
     }
 
     const restricao = await prisma.restricao.update({
