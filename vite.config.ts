@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -33,6 +34,18 @@ export default defineConfig(({ mode }) => {
       build: {
         outDir: 'dist',
         sourcemap: false,
-      }
+      },
+      // Configuração do Vitest
+      test: {
+        globals: true,
+        environment: 'jsdom',
+        setupFiles: ['./tests/setup.ts'],
+        include: ['tests/**/*.{test,spec}.{ts,tsx}'],
+        coverage: {
+          provider: 'v8',
+          reporter: ['text', 'json', 'html'],
+          include: ['components/**', 'pages/**', 'hooks/**', 'services/**'],
+        },
+      },
     };
 });

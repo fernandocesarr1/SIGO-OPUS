@@ -1,0 +1,744 @@
+openapi: 3.1.0
+info:
+  title: SIGO API
+  description: |
+    Sistema Integrado de Gestão Operacional - 4ª Companhia do 3º Batalhão de Polícia Ambiental
+
+    ## Autenticação
+    A API utiliza JWT (JSON Web Tokens) para autenticação. Após o login, inclua o token no header:
+    ```
+    Authorization: Bearer <token>
+    ```
+
+    ## Perfis de Usuário
+    - **COMANDANTE**: Acesso total ao sistema
+    - **CHEFE_SECAO**: Acesso à seção específica (P/1, P/3, P/4)
+    - **OPERADOR**: Acesso operacional limitado
+    - **ADMIN_SISTEMA**: Acesso administrativo total
+
+    ## Códigos de Restrição Médica
+    Conforme BG PM 166/06, existem 40 códigos de restrição médica.
+    Códigos críticos: UA (Uso de Arma), PO (Policiamento), DV (Dirigir Veículo), SE (Serviços Externos)
+
+    ## Tipos de Afastamento
+    Conforme I-36-PM, existem 22 tipos de afastamento regulamentados.
+  version: 2.0.0
+  contact:
+    name: 4ª Cia - 3º BPAmb
+  license:
+    name: Proprietário
+
+servers:
+  - url: http://localhost:3001/api
+    description: Servidor de desenvolvimento
+
+tags:
+  - name: auth
+    description: Autenticação e gerenciamento de sessão
+  - name: policiais
+    description: Gestão de efetivo (P/1)
+  - name: afastamentos
+    description: Controle de afastamentos (P/1)
+  - name: restricoes
+    description: Restrições médicas (P/1)
+  - name: ocorrencias
+    description: Registro de ocorrências (P/3)
+  - name: operacoes
+    description: Operações policiais (P/3)
+  - name: viaturas
+    description: Gestão de frota (P/4)
+  - name: manutencoes
+    description: Manutenções de viaturas (P/4)
+  - name: materiais
+    description: Controle de materiais (P/4)
+  - name: dashboard
+    description: Estatísticas e indicadores
+  - name: auditoria
+    description: Log de auditoria
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Erro ao processar requisição"
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 50
+        total:
+          type: integer
+          example: 99
+        totalPages:
+          type: integer
+          example: 2
+
+    PostoGraduacao:
+      type: string
+      enum: [CAP, 1TEN, 2TEN, SUBTEN, 1SGT, 2SGT, 3SGT, CB, SD]
+      description: Posto ou graduação do policial
+
+    StatusOperacional:
+      type: string
+      enum: [APTO, APTO_COM_RESTRICAO, AFASTADO]
+      description: Status operacional do policial
+
+    Policial:
+      type: object
+      properties:
+        id:
+          type: integer
+        re:
+          type: string
+          example: "123456"
+        digito:
+          type: string
+          example: "7"
+        nome:
+          type: string
+          example: "João Carlos da Silva Santos"
+        nomeGuerra:
+          type: string
+          example: "SILVA"
+        posto:
+          $ref: '#/components/schemas/PostoGraduacao'
+        funcao:
+          type: string
+          example: "Comandante Cia"
+        email:
+          type: string
+          format: email
+        telefone:
+          type: string
+        ativo:
+          type: boolean
+        statusOperacional:
+          $ref: '#/components/schemas/StatusOperacional'
+        subunidadeId:
+          type: integer
+        dataInclusao:
+          type: string
+          format: date
+        dataPromocao:
+          type: string
+          format: date
+        dataNascimento:
+          type: string
+          format: date
+
+    PolicialCreate:
+      type: object
+      required:
+        - re
+        - nome
+        - nomeGuerra
+        - posto
+      properties:
+        re:
+          type: string
+        digito:
+          type: string
+        nome:
+          type: string
+        nomeGuerra:
+          type: string
+        posto:
+          $ref: '#/components/schemas/PostoGraduacao'
+        funcao:
+          type: string
+        email:
+          type: string
+          format: email
+        telefone:
+          type: string
+        subunidadeId:
+          type: integer
+        dataInclusao:
+          type: string
+          format: date
+        dataPromocao:
+          type: string
+          format: date
+        dataNascimento:
+          type: string
+          format: date
+
+    Afastamento:
+      type: object
+      properties:
+        id:
+          type: integer
+        policialId:
+          type: integer
+        tipo:
+          type: string
+          enum: [FERIAS, LICENCA_PREMIO, LTS, CONVALESCENCA, LICENCA_GESTANTE, LICENCA_PATERNIDADE, OUTROS]
+        dataInicio:
+          type: string
+          format: date
+        dataFim:
+          type: string
+          format: date
+          nullable: true
+        indeterminado:
+          type: boolean
+        documento:
+          type: string
+        observacao:
+          type: string
+        contaEfetivoExercicio:
+          type: boolean
+
+    Restricao:
+      type: object
+      properties:
+        id:
+          type: integer
+        policialId:
+          type: integer
+        codigos:
+          type: array
+          items:
+            type: string
+          example: ["EF", "LP", "SE"]
+        parecerMedico:
+          type: string
+        dataInicio:
+          type: string
+          format: date
+        dataFim:
+          type: string
+          format: date
+        documento:
+          type: string
+        temCodigoCritico:
+          type: boolean
+
+    Ocorrencia:
+      type: object
+      properties:
+        id:
+          type: integer
+        bopm:
+          type: string
+          example: "001/2024"
+        dataHora:
+          type: string
+          format: date-time
+        tipoId:
+          type: integer
+        local:
+          type: string
+        descricao:
+          type: string
+        status:
+          type: string
+          enum: [ABERTA, EM_ANDAMENTO, CONCLUIDA, ARQUIVADA]
+        latitude:
+          type: number
+        longitude:
+          type: number
+
+    Viatura:
+      type: object
+      properties:
+        id:
+          type: integer
+        prefixo:
+          type: string
+          example: "I-12345"
+        placa:
+          type: string
+          example: "ABC1D23"
+        modelo:
+          type: string
+          example: "Hilux"
+        marca:
+          type: string
+          example: "Toyota"
+        ano:
+          type: integer
+          example: 2022
+        km:
+          type: integer
+        status:
+          type: string
+          enum: [OPERACIONAL, EM_MANUTENCAO, INOPERANTE, BAIXADA]
+        subunidadeId:
+          type: integer
+
+    LoginRequest:
+      type: object
+      required:
+        - login
+        - senha
+      properties:
+        login:
+          type: string
+          example: "admin"
+        senha:
+          type: string
+          format: password
+          example: "sigo2025"
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+            usuario:
+              type: object
+              properties:
+                id:
+                  type: integer
+                login:
+                  type: string
+                nome:
+                  type: string
+                perfil:
+                  type: string
+                  enum: [COMANDANTE, CHEFE_SECAO, OPERADOR, ADMIN_SISTEMA]
+                secao:
+                  type: string
+                  nullable: true
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Realizar login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login bem-sucedido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Credenciais inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Realizar logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logout bem-sucedido
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Obter dados do usuário logado
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dados do usuário
+
+  /auth/check:
+    get:
+      tags: [auth]
+      summary: Verificar se token é válido
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token válido
+        '401':
+          description: Token inválido ou expirado
+
+  /policiais:
+    get:
+      tags: [policiais]
+      summary: Listar policiais
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ativo
+          in: query
+          schema:
+            type: boolean
+        - name: subunidadeId
+          in: query
+          schema:
+            type: integer
+        - name: posto
+          in: query
+          schema:
+            $ref: '#/components/schemas/PostoGraduacao'
+        - name: busca
+          in: query
+          description: Busca por nome, nome de guerra ou RE
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Lista de policiais
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Policial'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      tags: [policiais]
+      summary: Cadastrar novo policial
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicialCreate'
+      responses:
+        '201':
+          description: Policial cadastrado
+        '400':
+          description: Dados inválidos
+        '409':
+          description: RE já cadastrado
+
+  /policiais/{id}:
+    get:
+      tags: [policiais]
+      summary: Obter policial por ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Dados do policial
+        '404':
+          description: Policial não encontrado
+
+    put:
+      tags: [policiais]
+      summary: Atualizar policial
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicialCreate'
+      responses:
+        '200':
+          description: Policial atualizado
+        '404':
+          description: Policial não encontrado
+
+    delete:
+      tags: [policiais]
+      summary: Desativar policial (soft delete)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Policial desativado
+        '404':
+          description: Policial não encontrado
+
+  /afastamentos:
+    get:
+      tags: [afastamentos]
+      summary: Listar afastamentos
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: policialId
+          in: query
+          schema:
+            type: integer
+        - name: ativo
+          in: query
+          schema:
+            type: boolean
+        - name: tipo
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de afastamentos
+
+    post:
+      tags: [afastamentos]
+      summary: Registrar novo afastamento
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - policialId
+                - tipo
+                - dataInicio
+              properties:
+                policialId:
+                  type: integer
+                tipo:
+                  type: string
+                dataInicio:
+                  type: string
+                  format: date
+                dataFim:
+                  type: string
+                  format: date
+                indeterminado:
+                  type: boolean
+                documento:
+                  type: string
+      responses:
+        '201':
+          description: Afastamento registrado
+        '409':
+          description: Período conflita com afastamento existente
+
+  /restricoes:
+    get:
+      tags: [restricoes]
+      summary: Listar restrições médicas
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: policialId
+          in: query
+          schema:
+            type: integer
+        - name: ativo
+          in: query
+          schema:
+            type: boolean
+        - name: critico
+          in: query
+          description: Filtrar apenas restrições com códigos críticos
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Lista de restrições
+
+    post:
+      tags: [restricoes]
+      summary: Registrar nova restrição
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - policialId
+                - codigos
+                - dataInicio
+                - dataFim
+              properties:
+                policialId:
+                  type: integer
+                codigos:
+                  type: array
+                  items:
+                    type: string
+                  description: Códigos conforme BG PM 166/06
+                parecerMedico:
+                  type: string
+                dataInicio:
+                  type: string
+                  format: date
+                dataFim:
+                  type: string
+                  format: date
+                documento:
+                  type: string
+      responses:
+        '201':
+          description: Restrição registrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Restricao'
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Avisos sobre regras aplicadas (ex SE implica UU)
+
+  /dashboard/efetivo:
+    get:
+      tags: [dashboard]
+      summary: Estatísticas de efetivo
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Estatísticas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      aptos:
+                        type: integer
+                      comRestricao:
+                        type: integer
+                      afastados:
+                        type: integer
+                      ultimaAtualizacao:
+                        type: string
+                        format: date
+
+  /dashboard/viaturas:
+    get:
+      tags: [dashboard]
+      summary: Estatísticas de viaturas
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Estatísticas de frota
+
+  /dashboard/ocorrencias:
+    get:
+      tags: [dashboard]
+      summary: Estatísticas de ocorrências
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: periodo
+          in: query
+          schema:
+            type: string
+            enum: [dia, semana, mes, ano]
+      responses:
+        '200':
+          description: Estatísticas de ocorrências
+
+  /auditoria:
+    get:
+      tags: [auditoria]
+      summary: Consultar log de auditoria
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tabela
+          in: query
+          schema:
+            type: string
+        - name: acao
+          in: query
+          schema:
+            type: string
+            enum: [CREATE, UPDATE, DELETE]
+        - name: usuario
+          in: query
+          schema:
+            type: string
+        - name: dataInicio
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dataFim
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Registros de auditoria
